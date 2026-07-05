@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>玉転がし迷路ゲーム</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      text-align: center;
+      background: #fafafa;
+    }
+    #game {
+      position: relative;
+      width: 90vw;
+      height: 90vw;
+      max-width: 400px;
+      max-height: 400px;
+      margin: 20px auto;
+      background-color: #eee;
+      border: 5px solid #444;
+    }
+    .ball {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background-color: red;
+      box-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+      transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+    }
+    .ball.falling {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    .goal {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      background-color: green;
+      border: 2px solid darkgreen;
+      border-radius: 4px;
+    }
+    .hole {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background-color: black;
+      box-shadow: inset 2px 2px 6px rgba(0,0,0,0.8);
+    }
+    .wall {
+      position: absolute;
+      background-color: #333;
+      box-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    #startButton {
+      padding: 10px 20px;
+      font-size: 18px;
+      margin-top: 10px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #startButton:hover {
+      background-color: #45a049;
+    }
+    #startButton:active {
+      background-color: #3e8e41;
+      transform: translateY(1px);
+    }
+    #info {
+      margin: 10px 0;
+      font-size: 14px;
+      color: #666;
+    }
+    #controls {
+      margin: 10px 0;
+      display: none;
+    }
+    .control-btn {
+      padding: 10px;
+      margin: 5px;
+      font-size: 16px;
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .control-btn:active {
+      background-color: #1976D2;
+    }
+  </style>
+</head>
+<body>
+
+<h1>玉転がし迷路ゲーム</h1>
+<div id="info">デバイスを傾けてボールを操作し、緑のゴールを目指しましょう！<br>黒い穴に落ちないよう注意してください。</div>
+<button id="startButton">スタート</button>
+<div id="controls">
+  <div>キーボード操作:</div>
+  <button class="control-btn" data-key="ArrowUp">↑</button><br>
+  <button class="control-btn" data-key="ArrowLeft">←</button>
+  <button class="control-btn" data-key="ArrowDown">↓</button>
+  <button class="control-btn" data-key="ArrowRight">→</button>
+</div>
+<div id="game">
+  <div class="ball" id="ball"></div>
+  <div class="goal" id="goal"></div>
+</div>
+
+<audio id="startSound" src="start.mp3"></audio>
+<audio id="goalSound" src="goal.mp3"></audio>
+<audio id="fallSound" src="fall.mp3"></audio>
+
+<script>
+  const game = document.getElementById("game");
+  const ball = document.getElementById("ball");
+  const goal = document.getElementById("goal");
+  const startButton = document.getElementById("startButton");
+  const controls = document.getElementById("controls");
+  const startSound = document.getElementById("startSound");
+  const goalSound = document.getElementById("goalSound");
+  const fallSound = document.getElementById("fallSound");
+
+  let posX = 0;
+  let posY = 0;
+  let velocityX = 0;
+  let velocityY = 0;
+  let walls = [];
+  let holes = [];
+  let gameRunning = false;
+  let keys = {};
+
+  // 音声を動的に作成（実際のファイルがない場合の代替）
+  function createAudioElement(frequency, duration, type = 'sine') {
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+      oscillator.type = type;
+      
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + duration);
+    } catch (e) {
+      console.log('Web Audio API not supported');
+    }
+  }
+
+  function playStartSound() {
+    console.log('Playing start sound...');
+    try {
+      if (startSound) {
+        startSound.play().catch(e => {
+          console.log('Audio file not found, using fallback');
+          playFallbackStartSound();
+        });
+      } else {
+        playFallbackStartSound();
+      }
+    } catch (e) {
+      playFallbackStartSound();
+    }
+  }
+
+  function playFallbackStartSound() {
+    createAudioElement(523, 0.2);
+    setTimeout(() => createAudioElement(659, 0.2), 100);
+    setTimeout(() => createAudioElement(784, 0.3), 200);
+  }
+
+  function playGoalSound() {
+    try {
+      if (goalSound) {
+        goalSound.play().catch(e => {
+          playFallbackGoalSound();
+        });
+      } else {
+        playFallbackGoalSound();
+      }
+    } catch (e) {
+      playFallbackGoalSound();
+    }
+  }
+
+  function playFallbackGoalSound() {
+    createAudioElement(523, 0.15);
+    setTimeout(() => createAudioElement(659, 0.15), 100);
+    setTimeout(() => createAudioElement(784, 0.15), 200);
+    setTimeout(() => createAudioElement(1047, 0.4), 300);
+  }
+
+  function playFallSound() {
+    try {
+      if (fallSound) {
+        fallSound.play().catch(e => {
+          playFallbackFallSound();
+        });
+      } else {
+        playFallbackFallSound();
+      }
+    } catch (e) {
+      playFallbackFallSound();
+    }
+  }
+
+  function playFallbackFallSound() {
+    for (let i = 0; i < 10; i++) {
+      setTimeout(() => createAudioElement(800 - i * 60, 0.05, 'sawtooth'), i * 20);
+    }
+  }
+
+  function createMazeWalls() {
+    // 既存の壁を削除
+    walls.forEach(w => w.element.remove());
+    walls = [];
+
+    // 袋小路を避けた迷路パターン - より通路を確保
+    const mazeData = [
+      // L字型の壁（左上エリア）
+      {x: 80, y: 0, w: 10, h: 120},
+      {x: 80, y: 120, w: 100, h: 10},
+      
+      // 中央の島
+      {x: 180, y: 180, w: 80, h: 10},
+      {x: 250, y: 90, w: 10, h: 100},
+      
+      // 右下への通路を作る壁
+      {x: 0, y: 200, w: 120, h: 10},
+      {x: 300, y: 0, w: 10, h: 150},
+      
+      // 上部の横壁（完全に塞がないように短く）
+      {x: 120, y: 50, w: 100, h: 10},
+      
+      // 下部の縦壁
+      {x: 50, y: 280, w: 10, h: 120},
+      {x: 200, y: 320, w: 150, h: 10}
+    ];
+
+    mazeData.forEach(w => {
+      const wall = document.createElement("div");
+      wall.className = "wall";
+      wall.style.left = `${w.x}px`;
+      wall.style.top = `${w.y}px`;
+      wall.style.width = `${w.w}px`;
+      wall.style.height = `${w.h}px`;
+      game.appendChild(wall);
+      walls.push({element: wall, x: w.x, y: w.y, w: w.w, h: w.h});
+    });
+  }
+
+  function createHoles() {
+    // 既存の穴を削除
+    holes.forEach(h => h.element.remove());
+    holes = [];
+
+    const numHoles = 3;
+    const maxAttempts = 50;
+    const gameWidth = game.clientWidth || 400;
+    const gameHeight = game.clientHeight || 400;
+
+    for (let i = 0; i < numHoles; i++) {
+      let attempts = 0;
+      let validPosition = false;
+      let holeX, holeY;
+
+      while (!validPosition && attempts < maxAttempts) {
+        holeX = Math.random() * (gameWidth - 30);
+        holeY = Math.random() * (gameHeight - 30);
+        
+        validPosition = true;
+        
+        // 壁との重複チェック（少し余裕を持たせる）
+        for (const wall of walls) {
+          if (!(holeX + 35 < wall.x || holeX - 5 > wall.x + wall.w || 
+                holeY + 35 < wall.y || holeY - 5 > wall.y + wall.h)) {
+            validPosition = false;
+            break;
+          }
+        }
+
+        // 他の穴との重複チェック
+        for (const hole of holes) {
+          const distance = Math.sqrt((holeX - hole.x) ** 2 + (holeY - hole.y) ** 2);
+          if (distance < 70) {
+            validPosition = false;
+            break;
+          }
+        }
+
+        // スタート位置付近は避ける
+        if (holeX < 50 && holeY < 50) {
+          validPosition = false;
+        }
+
+        attempts++;
+      }
+
+      if (validPosition) {
+        const holeElement = document.createElement("div");
+        holeElement.className = "hole";
+        holeElement.style.left = `${holeX}px`;
+        holeElement.style.top = `${holeY}px`;
+        game.appendChild(holeElement);
+        holes.push({element: holeElement, x: holeX, y: holeY});
+      }
+    }
+  }
+
+  function findValidPosition(width, height, excludeWalls = true, excludeHoles = true) {
+    const maxAttempts = 100;
+    let attempts = 0;
+    const gameWidth = game.clientWidth || 400;
+    const gameHeight = game.clientHeight || 400;
+
+    while (attempts < maxAttempts) {
+      const x = Math.random() * (gameWidth - width);
+      const y = Math.random() * (gameHeight - height);
+      let valid = true;
+
+      // 壁との重複チェック
+      if (excludeWalls) {
+        for (const wall of walls) {
+          if (!(x + width < wall.x || x > wall.x + wall.w || 
+                y + height < wall.y || y > wall.y + wall.h)) {
+            valid = false;
+            break;
+          }
+        }
+      }
+
+      // 穴との重複チェック（少し余裕を持たせる）
+      if (valid && excludeHoles) {
+        for (const hole of holes) {
+          if (!(x + width + 10 < hole.x || x - 10 > hole.x + 30 || 
+                y + height + 10 < hole.y || y - 10 > hole.y + 30)) {
+            valid = false;
+            break;
+          }
+        }
+      }
+
+      if (valid) {
+        return {x, y};
+      }
+      attempts++;
+    }
+
+    // フォールバック位置
+    return {x: 10, y: 10};
+  }
+
+  function resetBallAndGoal() {
+    // ボールの位置をリセット
+    const ballPos = findValidPosition(20, 20);
+    posX = ballPos.x;
+    posY = ballPos.y;
+    velocityX = 0;
+    velocityY = 0;
+    ball.style.left = `${posX}px`;
+    ball.style.top = `${posY}px`;
+    ball.classList.remove('falling'); // フォール状態をリセット
+
+    // ゴールの位置をリセット
+    const goalPos = findValidPosition(30, 30);
+    goal.style.left = `${goalPos.x}px`;
+    goal.style.top = `${goalPos.y}px`;
+  }
+
+  function detectCollision(x1, y1, w1, h1, x2, y2, w2, h2) {
+    return !(x1 + w1 < x2 || x1 > x2 + w2 || y1 + h1 < y2 || y1 > y2 + h2);
+  }
+
+  function checkWallCollision(newX, newY) {
+    for (const wall of walls) {
+      if (detectCollision(newX, newY, 20, 20, wall.x, wall.y, wall.w, wall.h)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ボールの中心が穴の中心から一定距離以内かチェック
+  function checkHoleCollision(ballCenterX, ballCenterY) {
+    for (const hole of holes) {
+      const holeCenterX = hole.x + 15; // 穴の中心X
+      const holeCenterY = hole.y + 15; // 穴の中心Y
+      const distance = Math.sqrt(
+        (ballCenterX - holeCenterX) ** 2 + 
+        (ballCenterY - holeCenterY) ** 2
+      );
+      
+      // ボールの中心が穴の半径内（15px）に入ったら失敗
+      if (distance <= 15) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function updateBall() {
+    if (!gameRunning) return;
+
+    // キーボード入力の処理
+    const force = 0.5;
+    if (keys['ArrowUp'] || keys['KeyW']) velocityY -= force;
+    if (keys['ArrowDown'] || keys['KeyS']) velocityY += force;
+    if (keys['ArrowLeft'] || keys['KeyA']) velocityX -= force;
+    if (keys['ArrowRight'] || keys['KeyD']) velocityX += force;
+
+    const friction = 0.95;
+    const maxVelocity = 5;
+    
+    velocityX *= friction;
+    velocityY *= friction;
+    
+    velocityX = Math.max(-maxVelocity, Math.min(maxVelocity, velocityX));
+    velocityY = Math.max(-maxVelocity, Math.min(maxVelocity, velocityY));
+
+    // 新しい位置を計算
+    let newX = posX + velocityX;
+    let newY = posY + velocityY;
+
+    // 壁との衝突をチェックして修正
+    if (checkWallCollision(newX, posY)) {
+      velocityX *= -0.3;
+      newX = posX;
+    }
+    
+    if (checkWallCollision(posX, newY)) {
+      velocityY *= -0.3;
+      newY = posY;
+    }
+
+    if (checkWallCollision(newX, newY)) {
+      velocityX *= -0.3;
+      velocityY *= -0.3;
+      newX = posX;
+      newY = posY;
+    }
+
+    // ゲーム領域内に制限
+    const gameWidth = game.clientWidth || 400;
+    const gameHeight = game.clientHeight || 400;
+    newX = Math.max(0, Math.min(gameWidth - 20, newX));
+    newY = Math.max(0, Math.min(gameHeight - 20, newY));
+
+    posX = newX;
+    posY = newY;
+
+    ball.style.left = `${posX}px`;
+    ball.style.top = `${posY}px`;
+
+    // ボールの中心座標を計算
+    const ballCenterX = posX + 10;
+    const ballCenterY = posY + 10;
+
+    // 穴との衝突判定（ボールの中心が穴に重なったか）
+    if (checkHoleCollision(ballCenterX, ballCenterY)) {
+      gameRunning = false;
+      
+      // ボールを消すアニメーション
+      ball.classList.add('falling');
+      playFallSound();
+      
+      setTimeout(() => {
+        alert("穴に落ちました！ゲームオーバー");
+        initializeGame();
+      }, 600);
+      return;
+    }
+
+    // ゴール判定
+    const goalRect = goal.getBoundingClientRect();
+    const gameRect = game.getBoundingClientRect();
+    const goalX = goalRect.left - gameRect.left;
+    const goalY = goalRect.top - gameRect.top;
+    
+    if (detectCollision(posX, posY, 20, 20, goalX, goalY, 30, 30)) {
+      gameRunning = false;
+      playGoalSound();
+      setTimeout(() => {
+        alert("ゴール成功！");
+        initializeGame();
+      }, 500);
+      return;
+    }
+
+    requestAnimationFrame(updateBall);
+  }
+
+  function handleDeviceOrientation(e) {
+    if (!gameRunning) return;
+    
+    const maxTilt = 30;
+    const force = 0.4;
+    
+    const gammaRatio = Math.max(-1, Math.min(1, (e.gamma || 0) / maxTilt));
+    const betaRatio = Math.max(-1, Math.min(1, (e.beta || 0) / maxTilt));
+    
+    velocityX += gammaRatio * force;
+    velocityY += betaRatio * force;
+  }
+
+  function initializeGame() {
+    console.log('Initializing game...');
+    gameRunning = false;
+    createMazeWalls();
+    createHoles();
+    resetBallAndGoal();
+    startButton.style.display = 'inline-block';
+    controls.style.display = 'none';
+  }
+
+  function startGame() {
+    console.log('Starting game...');
+    playStartSound();
+    gameRunning = true;
+    startButton.style.display = 'none';
+    controls.style.display = 'block';
+    
+    // デバイスの向きの許可を要求（iOS対応）
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(response => {
+          if (response === 'granted') {
+            window.addEventListener("deviceorientation", handleDeviceOrientation);
+          }
+        })
+        .catch(err => {
+          console.log('DeviceOrientation permission denied:', err);
+        });
+    } else {
+      // 非iOS環境
+      window.addEventListener("deviceorientation", handleDeviceOrientation);
+    }
+    
+    updateBall();
+  }
+
+  // キーボードイベント
+  document.addEventListener('keydown', (e) => {
+    keys[e.code] = true;
+    e.preventDefault();
+  });
+
+  document.addEventListener('keyup', (e) => {
+    keys[e.code] = false;
+    e.preventDefault();
+  });
+
+  // タッチボタンイベント
+  document.querySelectorAll('.control-btn').forEach(btn => {
+    btn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      keys[btn.dataset.key] = true;
+    });
+    
+    btn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      keys[btn.dataset.key] = false;
+    });
+    
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      keys[btn.dataset.key] = true;
+    });
+    
+    btn.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      keys[btn.dataset.key] = false;
+    });
+  });
+
+  // スタートボタンイベント
+  startButton.addEventListener("click", (e) => {
+    console.log('Start button clicked!');
+    e.preventDefault();
+    initializeGame();
+    setTimeout(startGame, 100);
+  });
+
+  // 初期化
+  console.log('Page loaded, initializing...');
+  initializeGame();
+</script>
+
+</body>
+</html>
