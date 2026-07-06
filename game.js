@@ -16,11 +16,13 @@ export class Game {
     this.player = new Player(60, 60);
     this.renderer = new Renderer(ctx, canvas, this.maze, this.player);
 
-    this.state = "ready"; // ready / playing / clear / fail
+    this.state = "ready";
     this.animationFrameId = null;
   }
 
-  start() {
+  async start() {
+    await this.input.enableMotionControls();
+
     this.player.reset();
     this.state = "playing";
     this.audio.play("start");
@@ -47,7 +49,6 @@ export class Game {
     const vec = this.input.getVector();
     this.player.update(vec, this.maze);
 
-    // ゴール判定
     if (this.maze.isGoal(this.player.x, this.player.y)) {
       this.state = "clear";
       this.audio.play("goal");
