@@ -21,7 +21,9 @@ export class Game {
   }
 
   async start() {
+    const audioUnlock = this.audio.unlock();
     await this.input.enableMotionControls();
+    await audioUnlock;
 
     this.player.reset();
     this.state = "playing";

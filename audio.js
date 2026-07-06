@@ -5,6 +5,7 @@ export class AudioManager {
       goal: new Audio("./goal.mp3"),
       fall: new Audio("./fall.mp3"),
     };
+    this.unlocked = false;
 
     Object.values(this.sounds).forEach((audio) => {
       audio.preload = "auto";
@@ -12,6 +13,30 @@ export class AudioManager {
         console.warn("Audio file could not be loaded");
       };
     });
+  }
+
+  unlock() {
+    if (this.unlocked) return Promise.resolve();
+
+    const unlocks = Object.values(this.sounds).map((audio) => {
+      const originalMuted = audio.muted;
+      audio.muted = true;
+      audio.currentTime = 0;
+
+      return audio
+        .play()
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.muted = originalMuted;
+        })
+        .catch(() => {
+          audio.muted = originalMuted;
+        });
+    });
+
+    this.unlocked = true;
+    return Promise.allSettled(unlocks);
   }
 
   play(name) {
